@@ -21,7 +21,7 @@ body{padding-bottom:88px}.top{background:linear-gradient(145deg,#0b1020,#17213d)
 .btn{border:0;border-radius:12px;padding:12px 15px;font-weight:750}.btn.primary{background:var(--accent);color:#fff}.btn.secondary{background:#eef1f6;color:var(--ink)}.btn.full{width:100%;margin-top:12px}
 .row{display:flex;gap:9px;align-items:center}.row.between{justify-content:space-between}.date-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
 .date-nav button{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:#fff}.datebox{flex:1;text-align:center}.datebox strong{display:block;font-size:18px}.datebox span{color:var(--muted);font-size:12px}
-.bottom{position:fixed;z-index:20;left:0;right:0;bottom:0;background:rgba(11,16,32,.97);padding:8px 8px calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.bottom{position:fixed;z-index:20;left:0;right:0;bottom:0;background:rgba(11,16,32,.97);padding:8px 8px calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
 .navbtn{border:0;background:transparent;color:#9fa9bd;padding:7px 3px;border-radius:12px;font-size:11px;font-weight:750}.navbtn.active{background:#202b49;color:#fff}.navicon{display:block;font-size:22px;line-height:24px;margin-bottom:2px}
 .month{font-size:18px;font-weight:800;margin:18px 0 9px}.dayrow{display:flex;gap:10px;align-items:center;padding:13px 2px;border-bottom:1px solid var(--line)}.daynum{width:45px;text-align:center}.daynum strong{font-size:17px}.daynum small{display:block;color:var(--muted);font-size:10px}
 .daycontent{flex:1;min-width:0}.daycontent strong{font-size:14px}.daycontent p{margin:3px 0 0;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.done{color:var(--good);font-size:20px}
@@ -41,6 +41,7 @@ select{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px;b
 <button class="navbtn" data-tab="plan"><span class="navicon">📅</span>Plan</button>
 <button class="navbtn" data-tab="history"><span class="navicon">📚</span>History</button>
 <button class="navbtn" data-tab="data"><span class="navicon">📊</span>Data</button>
+<button class="navbtn" data-tab="nutrition"><span class="navicon">🍽️</span>Nutrition</button>
 </nav>
 <div id="toast" class="toast hidden"></div>
 <script>
@@ -50,6 +51,9 @@ const todayISO = new Date().toISOString().slice(0,10);
 let state = JSON.parse(localStorage.getItem(STORAGE) || "{}");
 state.recovery = state.recovery || {};
 state.workouts = state.workouts || {};
+state.nutrition = state.nutrition || {};
+state.profile = state.profile || {};
+state.profile.bmr = state.profile.bmr || 2168;
 let selectedDate = PLAN[todayISO] ? todayISO : Object.keys(PLAN).sort()[0];
 let currentTab = "today", currentWorkout = null;
 
@@ -65,12 +69,22 @@ function isComplete(date,slot){return !!state.workouts[sessionKey(date,slot)]?.s
 
 function render(){
  document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.tab===currentTab));
- if(currentWorkout)renderWorkout();else if(currentTab==="today")renderToday();else if(currentTab==="plan")renderPlan();else if(currentTab==="history")renderHistory();else renderData();
+ if(currentWorkout)renderWorkout();else if(currentTab==="today")renderToday();else if(currentTab==="plan")renderPlan();else if(currentTab==="history")renderHistory();else if(currentTab==="data")renderData();else renderNutrition();
 }
-function metricInput(key,label,val,unit){return `<div class="metric"><label>${label}</label><input id="rec_${key}" inputmode="decimal" value="${esc(val||"")}"><span class="unit">${unit}</span></div>`}
+function metricInput(key,label,val,unit){
+ const isSleep=key==="sleep";
+ return `<div class="metric"><label>${label}</label><input id="rec_${key}" ${isSleep?'type="text" inputmode="numeric" placeholder="07:30" pattern="[0-9]{1,2}:[0-5][0-9]"':'inputmode="decimal"'} value="${esc(val||"")}"><span class="unit">${unit}</span></div>`
+}
+function isRestSession(session){
+ const s=(session||'').toLowerCase();
+ return s.includes('rest') || s.includes('recovery') || s.includes('no training') || s.includes('mobility');
+}
 function workoutCard(slot,session,type){
- const done=isComplete(selectedDate,type);
- return `<div class="workout ${type}" onclick="openWorkout('${selectedDate}','${type}')"><div class="kicker">${slot} workout</div><h3>${esc(session.split(" — ")[0])}</h3><p>${esc(session)}</p><div class="row between"><span class="pill">${done?"✓ Completed":"Tap to log workout"}</span><span style="font-size:22px">›</span></div></div>`
+ const done=isComplete(selectedDate,slot);
+ if(isRestSession(session)){
+   return `<div class="workout ${type}" style="opacity:.72;cursor:default"><div class="kicker">${slot} · Recovery / Rest</div><h3>${esc(session.split(" — ")[0])}</h3><p>${esc(session)}</p><div class="row between"><span class="pill">No workout data required</span><span style="font-size:20px">✓</span></div></div>`;
+ }
+ return `<div class="workout ${type}" onclick="openWorkout('${selectedDate}','${slot}')"><div class="kicker">${slot} workout</div><h3>${esc(session.split(" — ")[0])}</h3><p>${esc(session)}</p><div class="row between"><span class="pill">${done?"✓ Completed":"Tap to log workout"}</span><span style="font-size:22px">›</span></div></div>`
 }
 function renderToday(){
  const d=getDay(selectedDate),r=state.recovery[selectedDate]||{};
@@ -80,9 +94,38 @@ function renderToday(){
  ${metricInput("hrv","HRV",r.hrv,"ms")}${metricInput("rhr","Resting HR",r.rhr,"bpm")}
  ${metricInput("bodyBattery","Body Battery",r.bodyBattery,"/100")}${metricInput("weight","Weight",r.weight,"kg")}
  </div><button class="btn primary full" onclick="saveRecovery()">Save recovery</button></div>
+ <div class="card"><div class="section-title">Daily Nutrition</div><div class="small" style="margin-bottom:10px">Enter the total calories and macros for each meal. These feed the weekly nutrition tracker and calorie-balance insights.</div>${mealEditor('breakfast','Breakfast',state.nutrition[selectedDate]?.breakfast)}${mealEditor('lunch','Lunch',state.nutrition[selectedDate]?.lunch)}${mealEditor('dinner','Dinner',state.nutrition[selectedDate]?.dinner)}${mealEditor('snacks','Snacks',state.nutrition[selectedDate]?.snacks)}<div class="stats" style="margin-top:12px"><div class="stat"><b>${dayFood(selectedDate).calories}</b><span>food kcal</span></div><div class="stat"><b>${dayFood(selectedDate).protein}g</b><span>protein</span></div><div class="stat"><b>${dayFood(selectedDate).carbs}g</b><span>carbs</span></div></div><button class="btn primary full" onclick="saveNutrition()">Save nutrition</button></div>
  <div class="page-title">Today's training</div><div class="page-sub">${esc(d.day)} · ${selectedDate}</div>
  ${workoutCard("AM",d.am,"am")}${workoutCard("PM",d.pm,"pm")}`
 }
+function mealEditor(key,label,old={}){
+ return `<div class="field" style="padding:10px 0;border-bottom:1px solid var(--line)"><label>${label}</label><div class="grid">${field('meal_'+key+'_calories','Calories',old.calories,'kcal')}${field('meal_'+key+'_protein','Protein',old.protein,'g')}${field('meal_'+key+'_carbs','Carbs',old.carbs,'g')}${field('meal_'+key+'_fat','Fat',old.fat,'g')}</div></div>`;
+}
+function num(v){const n=parseFloat(v);return Number.isFinite(n)?n:0}
+function dayFood(date){
+ const n=state.nutrition[date]||{};
+ const meals=['breakfast','lunch','dinner','snacks'];
+ const out={calories:0,protein:0,carbs:0,fat:0};
+ meals.forEach(m=>{const x=n[m]||{};out.calories+=num(x.calories);out.protein+=num(x.protein);out.carbs+=num(x.carbs);out.fat+=num(x.fat)});
+ return {calories:Math.round(out.calories),protein:Math.round(out.protein),carbs:Math.round(out.carbs),fat:Math.round(out.fat)};
+}
+function exerciseCalories(date){
+ return Object.values(state.workouts).filter(x=>x.saved&&x.date===date).reduce((sum,x)=>sum+num(x.calories),0);
+}
+function estimatedBalance(date){
+ const food=dayFood(date).calories;
+ const out=num(state.profile.bmr)+exerciseCalories(date);
+ return Math.round(out-food);
+}
+function saveNutrition(){
+ const keys=['breakfast','lunch','dinner','snacks'];state.nutrition[selectedDate]=state.nutrition[selectedDate]||{};
+ keys.forEach(k=>{state.nutrition[selectedDate][k]={calories:val('meal_'+k+'_calories'),protein:val('meal_'+k+'_protein'),carbs:val('meal_'+k+'_carbs'),fat:val('meal_'+k+'_fat')}});
+ saveState();toast('Nutrition saved');renderToday();
+}
+function weekStart(date){const d=new Date(date+'T12:00:00');const day=d.getDay()||7;d.setDate(d.getDate()-day+1);return d.toISOString().slice(0,10)}
+function formatWeekRange(start){const end=addDays(start,6);return `${new Date(start+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${new Date(end+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`}
+function changeNutritionWeek(n){selectedDate=addDays(weekStart(selectedDate),n*7);currentTab='nutrition';render()}
+
 function saveRecovery(){
  const keys=["sleep","sleepScore","hrv","rhr","bodyBattery","weight"];state.recovery[selectedDate]=state.recovery[selectedDate]||{};
  keys.forEach(k=>state.recovery[selectedDate][k]=document.getElementById("rec_"+k).value);saveState();toast("Recovery saved")
@@ -96,7 +139,9 @@ function field(id,label,v,unit){return `<div class="metric"><label>${label}</lab
 function val(id){return document.getElementById(id)?.value||""}
 
 function renderWorkout(){
- const {date,slot}=currentWorkout,d=getDay(date),session=slot==="am"?d.am:d.pm,old=state.workouts[sessionKey(date,slot)]||{},type=sportType(session);
+ const {date,slot}=currentWorkout,d=getDay(date),session=slot==="am"?d.am:d.pm;
+ if(isRestSession(session)){currentWorkout=null;render();return;}
+ const old=state.workouts[sessionKey(date,slot)]||{},type=sportType(session);
  const labels={run:"Run",bike:"Cycling",swim:"Swimming",other:"Other / Strength"};
  document.getElementById("app").innerHTML=`<button class="btn secondary back" onclick="closeWorkout()">← Back</button><div class="page-title">${slot.toUpperCase()} · ${labels[type]}</div><div class="page-sub">${esc(prettyDate(date))}</div>
  <div class="card"><div class="section-title">Planned session</div><p class="small">${esc(session)}</p></div>
@@ -133,14 +178,34 @@ function renderHistory(){
  document.getElementById("app").innerHTML=out
 }
 function avg(values){const nums=values.map(Number).filter(n=>Number.isFinite(n));return nums.length?(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1):"—"}
-function renderData(){
- const entries=Object.values(state.workouts).filter(x=>x.saved),rpe=avg(entries.map(x=>x.rpe)),feel=avg(entries.map(x=>x.overallFeel)),am=entries.filter(x=>x.slot==="am"),pm=entries.filter(x=>x.slot==="pm"),amFeel=avg(am.map(x=>x.overallFeel)),pmFeel=avg(pm.map(x=>x.overallFeel)),recs=Object.values(state.recovery);
- document.getElementById("app").innerHTML=`<div class="page-title">Data</div><div class="page-sub">Patterns will become more useful as you log more sessions.</div>
- <div class="card"><div class="section-title">Training snapshot</div><div class="stats"><div class="stat"><b>${entries.length}</b><span>logged</span></div><div class="stat"><b>${rpe}</b><span>avg RPE</span></div><div class="stat"><b>${feel}</b><span>avg feel</span></div></div></div>
- <div class="card"><div class="section-title">AM vs PM</div><div class="grid"><div class="metric"><label>AM workout feel</label><input value="${amFeel}" readonly><span class="unit">/10</span></div><div class="metric"><label>PM workout feel</label><input value="${pmFeel}" readonly><span class="unit">/10</span></div></div><p class="small" style="margin-top:12px">This will become a fuller trend view once enough sessions are logged.</p></div>
- <div class="card"><div class="section-title">Recovery data</div><div class="stats"><div class="stat"><b>${recs.length}</b><span>days logged</span></div><div class="stat"><b>${avg(recs.map(x=>x.sleepScore))}</b><span>sleep score</span></div><div class="stat"><b>${avg(recs.map(x=>x.rhr))}</b><span>RHR</span></div></div></div>
- <div class="card"><div class="section-title">Next analysis layer</div><p class="small">Recovery vs workout feel · sleep/HRV/RHR relationships · planned vs completed volume · sport trends · pace/power progression · RPE trends · AM/PM comparisons.</p></div>`
+function sleepHours(v){
+ if(!v)return null;
+ const str=String(v).trim();
+ if(str.includes(':')){const [h,m]=str.split(':').map(Number);return Number.isFinite(h)&&Number.isFinite(m)?h+m/60:null;}
+ const n=parseFloat(str);return Number.isFinite(n)?n:null;
 }
+function renderData(){
+ const entries=Object.values(state.workouts).filter(x=>x.saved),rpe=avg(entries.map(x=>x.rpe)),feel=avg(entries.map(x=>x.overallFeel)),am=entries.filter(x=>x.slot==="am"),pm=entries.filter(x=>x.slot==="pm"),amFeel=avg(am.map(x=>x.overallFeel)),pmFeel=avg(pm.map(x=>x.overallFeel)),recs=Object.values(state.recovery),foods=Object.keys(state.nutrition).map(dayFood),foodKcal=avg(foods.map(x=>x.calories)),protein=avg(foods.map(x=>x.protein)),balances=Object.keys(state.nutrition).map(d=>estimatedBalance(d)),defDays=balances.filter(x=>x>0).length,surDays=balances.filter(x=>x<0).length;
+ document.getElementById("app").innerHTML=`<div class="page-title">Data</div><div class="page-sub">Patterns become more useful as you log more sessions and nutrition.</div>
+ <div class="card"><div class="section-title">Training snapshot</div><div class="stats"><div class="stat"><b>${entries.length}</b><span>logged</span></div><div class="stat"><b>${rpe}</b><span>avg RPE</span></div><div class="stat"><b>${feel}</b><span>avg feel</span></div></div></div>
+ <div class="card"><div class="section-title">AM vs PM</div><div class="grid"><div class="metric"><label>AM workout feel</label><input value="${amFeel}" readonly><span class="unit">/10</span></div><div class="metric"><label>PM workout feel</label><input value="${pmFeel}" readonly><span class="unit">/10</span></div></div><p class="small" style="margin-top:12px">This compares logged AM and PM sessions so we can see whether earlier training affects later-session quality.</p></div>
+ <div class="card"><div class="section-title">Recovery data</div><div class="stats"><div class="stat"><b>${recs.length}</b><span>days logged</span></div><div class="stat"><b>${avg(recs.map(x=>x.sleepScore))}</b><span>sleep score</span></div><div class="stat"><b>${avg(recs.map(x=>x.rhr))}</b><span>RHR</span></div></div></div>
+ <div class="card"><div class="section-title">Nutrition & energy balance</div><div class="stats"><div class="stat"><b>${foodKcal}</b><span>avg food kcal</span></div><div class="stat"><b>${protein}g</b><span>avg protein</span></div><div class="stat"><b>${defDays}</b><span>estimated deficit days</span></div></div><p class="small" style="margin-top:12px">Estimated balance = BMR + logged workout calories − food calories. This is a simple training-log estimate, not a full TDEE calculation, because it does not include normal daily movement or other energy expenditure.</p></div>
+ <div class="card"><div class="section-title">Next analysis layer</div><p class="small">Recovery vs workout feel · sleep/HRV/RHR relationships · planned vs completed volume · sport trends · pace/power progression · RPE trends · AM/PM comparisons · food intake vs workout quality · protein intake · estimated energy balance.</p></div>`
+}
+function renderNutrition(){
+ const start=weekStart(selectedDate),dates=Array.from({length:7},(_,i)=>addDays(start,i));
+ let totalIn=0,totalProtein=0,totalCarbs=0,totalFat=0,totalExercise=0,totalBmr=0;
+ const rows=dates.map(date=>{const food=dayFood(date),ex=Math.round(exerciseCalories(date)),bmr=num(state.profile.bmr),balance=Math.round(bmr+ex-food.calories);totalIn+=food.calories;totalProtein+=food.protein;totalCarbs+=food.carbs;totalFat+=food.fat;totalExercise+=ex;totalBmr+=bmr;return {date,food,ex,bmr,balance}});
+ const weekBalance=totalBmr+totalExercise-totalIn;
+ let out=`<div class="date-nav"><button onclick="changeNutritionWeek(-1)">‹</button><div class="datebox"><strong>Nutrition</strong><span>${formatWeekRange(start)}</span></div><button onclick="changeNutritionWeek(1)">›</button></div>
+ <div class="card"><div class="section-title">Weekly calorie tracker</div><div class="small" style="margin-bottom:10px">BMR + logged workout calories are used as the simple estimated calories-out figure.</div><div class="grid">${field('bmr','BMR',state.profile.bmr,'kcal/day')}${field('weeklyTarget','Daily calorie target',state.profile.dailyTarget||'', 'kcal')}</div><button class="btn secondary full" onclick="saveBmr()">Save calorie settings</button></div>
+ <div class="card"><div class="stats"><div class="stat"><b>${totalIn}</b><span>food kcal</span></div><div class="stat"><b>${totalExercise}</b><span>exercise kcal</span></div><div class="stat"><b>${Math.abs(weekBalance)}</b><span>${weekBalance>=0?'estimated deficit':'estimated surplus'} kcal</span></div></div></div>`;
+ rows.forEach(r=>{const status=r.balance>0?'Deficit':r.balance<0?'Surplus':'Balanced';out+=`<div class="card"><div class="row between"><div><strong>${new Date(r.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</strong><div class="small">${r.food.calories} kcal in · ${r.ex} kcal exercise</div></div><span class="pill">${status} ${Math.abs(r.balance)} kcal</span></div><div class="grid" style="margin-top:10px"><div class="metric"><label>Protein</label><input value="${r.food.protein}g" readonly></div><div class="metric"><label>Carbs</label><input value="${r.food.carbs}g" readonly></div><div class="metric"><label>Fat</label><input value="${r.food.fat}g" readonly></div><div class="metric"><label>BMR</label><input value="${r.bmr}" readonly></div></div></div>`});
+ out+=`<div class="card"><div class="section-title">Weekly totals</div><div class="small">${totalProtein}g protein · ${totalCarbs}g carbs · ${totalFat}g fat · ${totalIn} kcal food · ${totalExercise} kcal logged exercise</div></div>`;
+ document.getElementById('app').innerHTML=out;
+}
+function saveBmr(){state.profile.bmr=val('bmr')||2168;state.profile.dailyTarget=val('weeklyTarget');saveState();toast('Calorie settings saved');renderNutrition()}
 document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click",()=>{currentTab=b.dataset.tab;currentWorkout=null;render()}));
 render();
 </script>
